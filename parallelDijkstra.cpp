@@ -15,6 +15,12 @@
 #include <future>
 #include <iomanip>
 #include <limits>
+#include <iostream>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <string.h>
+
 
 using namespace std;
 using namespace std::chrono;
@@ -166,6 +172,7 @@ void parallelDijkstra(Graph &g, int src, int nThreads)
                     }
                 }
                 //unlock mutex
+                cout<<"Thread "<<threadId<<" unlocked mutex"<<endl;
                 pqMutex.unlock();
             }
         }
@@ -185,50 +192,79 @@ void parallelDijkstra(Graph &g, int src, int nThreads)
     }
 }
 
-//main for 4 threads
-//random graph with 10 vertices and 20 edges
-//random source vertex
-//random weights
-int main(){
-    srand(time(NULL));
-    int V = 10;
-    int E = 20;
-    int src = rand() % V;
-    Graph g(V);
-    for (int i = 0; i < E; i++)
-    {
-        int src = rand() % V;
-        int dest = rand() % V;
-        int weight = rand() % 10;
-        g.addEdge(src, dest, weight);
-    }
-    cout << "Graph:" << endl;
-    g.printGraph();
-    cout << endl;
-    //count time for dijkstra
-    auto start = chrono::high_resolution_clock::now();
-    cout << "Dijkstra:" << endl;
-    dijkstra(g, src);
-    // g.printDist();
-    //print distance from source vertex to all other vertices
-    cout << "Distance from source vertex " << src << " to all other vertices:" << endl;
-    for (int i = 0; i < V; i++)
-    {
-        cout << i << ": " << g.dist[i] << endl;
-    }
-    cout << endl;
-    auto end = chrono::high_resolution_clock::now();
-    auto duration = chrono::duration_cast<chrono::microseconds>(end - start);
-    cout << "Time taken by Dijkstra: " << duration.count() << " microseconds" << endl;
+
+int main() {
+  int server_fd, new_socket, valread;
+  struct sockaddr_in address;
+  int opt = 1;
+  int addrlen = sizeof(address);
+  char buffer[1024] = {0};
+  const char *hello = "Hello from server";
+
+  // Create a server socket
+  if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
+    perror("socket failed");
+    exit(EXIT_FAILURE);
+  }
+
+  // Set socket options
+  if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt))) {
+    perror("setsockopt");
+    exit(EXIT_FAILURE);
+  }
+  address.sin_family = AF_INET;
+  address.sin_addr.s_addr = INADDR_ANY;
+  address.sin_port = htons(8080);
+
+  // Bind the socket to an address and port
+  if (::bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
+    perror("bind failed");
+    exit(EXIT_FAILURE);
+  }
+
+  // Start listening for connections
+  if (listen(server_fd, 3) < 0) {
+    perror("listen");
+    exit(EXIT_FAILURE);
+  }
+
+  // Accept incoming connections
+  if ((new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen))<0) {
+    perror("accept");
+    exit(EXIT_FAILURE);
+  }
+
+  // Read data from the client
+  valread = read(new_socket, buffer, 1024);
+  printf("%s\n", buffer);
+
+  // Parse the input to extract the parameters for the parallel Dijkstra algorithm
+    int numVertices, numEdges, src, numThreads;
+    sscanf(buffer, "%d %d %d %d", &numVertices, &numEdges, &src, &numThreads);
+    printf("%d %d %d %d", numVertices, numEdges, src, numThreads);
+
     
-    //count time for parallelDijkstra
-    start = chrono::high_resolution_clock::now();
-    cout << "Parallel Dijkstra:" << endl;
-    parallelDijkstra(g, src, 4);
-    g.printDist();
-    cout << endl;
-    end = chrono::high_resolution_clock::now();
-    duration = chrono::duration_cast<chrono::microseconds>(end - start);
-    cout << "Time taken by Parallel Dijkstra: " << duration.count() << " microseconds" << endl;
-    return 0;
+
+  // Create a graph object
+  Graph g(numVertices);
+  // Add the edges to the graph
+  //read from the client and add edges to the graph
+    for (int i = 0; i < numEdges; i++) {
+        int u, v, w;
+        valread = read(new_socket, buffer, 1024);
+        sscanf(buffer, "%d %d %d", &u, &v, &w);
+        g.addEdge(u, v, w);
+    }
+
+  // Run the parallel Dijkstra algorithm
+  parallelDijkstra(g, src, numThreads);
+  // Send the result back to the client
+  stringstream ss;
+  for (int i = 0; i < g.V; i++) {
+    ss << g.dist[i] << " ";
+  }
+  string result = ss.str();
+  send(new_socket, result.c_str(), result.length(), 0);
+
+  return 0;
 }
