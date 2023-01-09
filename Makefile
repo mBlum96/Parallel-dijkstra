@@ -1,7 +1,7 @@
 CXX = g++
-CFLAGS = -pthread -std=c++20 -Wall -O3 -g
+CFLAGS = -pthread -std=c++20 -Wall -Werror -O3 -g
 
-SOURCES = parallelDijkstra.cpp
+SOURCES = parallelDi§jkstra.cpp
 OBJECTS = parallelDijkstra.o
 
 parallelDijkstra: $(OBJECTS)
